@@ -1,4 +1,4 @@
-extern crate bindgen;
+use bindgen;
 
 use std::env;
 use std::fs;

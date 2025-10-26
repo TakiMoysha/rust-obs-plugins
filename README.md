@@ -1,3 +1,9 @@
+# Fork repository
+
+- init submodules (obs for obs-sys)
+- update obs `git submodule update --remote`
+- update rust-bindings 
+ 
 # Rust OBS Wrapper
 
 [![Build Status](https://travis-ci.org/bennetthardwick/rust-obs-plugins.svg?branch=master)](https://travis-ci.org/bennetthardwick/rust-obs-plugins)

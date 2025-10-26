@@ -37,7 +37,7 @@ impl_ptr_wrapper!(
     obs_output_release
 );
 
-extern "C" fn enum_proc(params: *mut std::ffi::c_void, output: *mut obs_output_t) -> bool {
+unsafe extern "C" fn enum_proc(params: *mut std::ffi::c_void, output: *mut obs_output_t) -> bool {
     let mut v = unsafe { Box::<Vec<*mut obs_output_t>>::from_raw(params as *mut _) };
     v.push(output);
     Box::into_raw(v);

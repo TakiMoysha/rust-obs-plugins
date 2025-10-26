@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 
 use dasp::{
     interpolate::linear::Linear,
-    signal::{self, interpolate::Converter, Signal},
+    signal::{self, Signal, interpolate::Converter},
 };
 
 const RNNOISE_SAMPLE_RATE: f64 = 48000.;
@@ -18,10 +18,10 @@ struct Output {
     last_output: (f32, f32),
 }
 
-struct RnnoiseDenoiserFilter {
+struct RnnoiseDenoiserFilter<'a> {
     output: Output,
     input: VecDeque<f32>,
-    state: Box<DenoiseState>,
+    state: Box<DenoiseState<'a>>,
     temp: [f32; FRAME_SIZE],
     temp_out: [f32; FRAME_SIZE],
     sample_rate: f64,
@@ -32,7 +32,7 @@ struct TheModule {
     context: ModuleRef,
 }
 
-impl Sourceable for RnnoiseDenoiserFilter {
+impl Sourceable for RnnoiseDenoiserFilter<'_> {
     fn get_id() -> ObsString {
         obs_string!("rnnoise_noise_suppression_filter")
     }
@@ -59,20 +59,20 @@ impl Sourceable for RnnoiseDenoiserFilter {
     }
 }
 
-impl GetNameSource for RnnoiseDenoiserFilter {
+impl GetNameSource for RnnoiseDenoiserFilter<'_> {
     fn get_name() -> ObsString {
         obs_string!("Rnnoise Noise Suppression Filter")
     }
 }
 
-impl UpdateSource for RnnoiseDenoiserFilter {
+impl UpdateSource for RnnoiseDenoiserFilter<'_> {
     fn update(&mut self, _settings: &mut DataObj, context: &mut GlobalContext) {
         let sample_rate = context.with_audio(|audio| audio.sample_rate());
         self.sample_rate = sample_rate as f64;
     }
 }
 
-impl FilterAudioSource for RnnoiseDenoiserFilter {
+impl FilterAudioSource for RnnoiseDenoiserFilter<'_> {
     fn filter_audio(&mut self, audio: &mut audio::AudioDataContext) {
         let data = self;
         let state = &mut data.state;
@@ -193,7 +193,9 @@ impl Module for TheModule {
     }
 
     fn description() -> ObsString {
-        obs_string!("A filter that removes background noise from your microphone using the rnnoise neural network noise suppression model.")
+        obs_string!(
+            "A filter that removes background noise from your microphone using the rnnoise neural network noise suppression model."
+        )
     }
     fn name() -> ObsString {
         obs_string!("Rnnoise Noise Suppression Filter")

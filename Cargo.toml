@@ -1,24 +1,26 @@
 [package]
 name = "obs-wrapper"
-version = "0.4.1"
+version = "0.4.2-tm"
 authors = ["Bennett Hardwick <me@bennetthardwick.com>"]
-edition = "2018"
+edition = "2024"
 license = "GPL-2.0"
 description = "Safe wrapper of obs-sys"
-repository = "https://github.com/bennetthardwick/rust-obs-plugins"
+repository = "https://github.com/TakiMoysha/rust-obs-plugins"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-
 members = [
   "obs-sys",
   "plugins/*",
 ]
 
 [dependencies]
-obs-sys = { path = "./obs-sys", version = "0.3.0" }
-paste = "0.1.7"
-log = {version = "0.4.11", features = ["std"]}
-num-traits = "0.2.14"
-thiserror = "1.0.58"
+obs-sys = { path = "./obs-sys", version = "0.3.1-tm" }
+paste = "1.0.15"
+log = { version ="0.4.28", features = ["std"] }
+num-traits = "0.2.19"
+thiserror = "2.0.17"
+# obs-sys = { path = "./obs-sys", version = "0.2.1" }
+# paste = "1.0.15"
+# num-traits = "0.2.19"
