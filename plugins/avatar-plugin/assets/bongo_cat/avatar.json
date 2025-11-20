@@ -1,0 +1,161 @@
+{
+    "avatar": {
+        "name": "Bongo Cat",
+        "version": "1.0.0",
+        "author": "Original by @StrayRogue",
+        "description": "Classic Bongo Cat avatar with keyboard mode support",
+        "settings": {
+            "default_mode": "keyboard",
+            "default_face": "f1",
+            "canvas_width": 1280,
+            "canvas_height": 768,
+            "fps": 60
+        },
+        "faces": {
+            "enabled": true,
+            "base_path": "face",
+            "config_file": "face/config.json",
+            "expressions": {
+                "f1": {
+                    "name": "Normal",
+                    "file": "face/0.png",
+                    "description": "Default neutral expression"
+                },
+                "f2": {
+                    "name": "Happy",
+                    "file": "face/1.png",
+                    "description": "Happy/excited expression"
+                },
+                "f3": {
+                    "name": "Sad",
+                    "file": "face/2.png",
+                    "description": "Sad/concerned expression"
+                },
+                "f4": {
+                    "name": "Surprised",
+                    "file": "face/3.png",
+                    "description": "Surprised expression"
+                }
+            }
+        },
+        "modes": {
+            "enabled": true,
+            "base_path": "mode",
+            "config_file": "mode/config.json",
+            "available": [
+                {
+                    "id": "keyboard",
+                    "name": "Keyboard Mode",
+                    "description": "Bongo Cat plays on keyboard",
+                    "config": "mode/keyboard/config.json",
+                    "features": [
+                        "hands",
+                        "keys",
+                        "background"
+                    ],
+                    "recommended": true
+                },
+                {
+                    "id": "standard",
+                    "name": "Standard Mode",
+                    "description": "Standard typing mode",
+                    "config": "mode/standard/config.json",
+                    "features": [
+                        "hands",
+                        "keys",
+                        "background"
+                    ]
+                },
+                {
+                    "id": "feixue",
+                    "name": "Feixue Mode",
+                    "description": "Special feixue themed mode",
+                    "config": "mode/feixue/config.json",
+                    "features": [
+                        "hands",
+                        "effects",
+                        "background"
+                    ]
+                },
+                {
+                    "id": "bilibiliduo",
+                    "name": "Bilibili Duo Mode",
+                    "description": "Bilibili themed dual mode",
+                    "config": "mode/bilibiliduo/config.json",
+                    "features": [
+                        "hands",
+                        "special"
+                    ]
+                },
+                {
+                    "id": "mania",
+                    "name": "Mania Mode",
+                    "description": "Rhythm game mania mode",
+                    "config": "mode/mania/config.json",
+                    "features": [
+                        "hands",
+                        "rhythm"
+                    ]
+                }
+            ]
+        },
+        "keybindings": {
+            "face_expressions": {
+                "f1": "normal",
+                "f2": "happy",
+                "f3": "sad",
+                "f4": "surprised"
+            },
+            "mode_switch": {
+                "1": "keyboard",
+                "2": "standard",
+                "3": "feixue",
+                "4": "bilibiliduo",
+                "5": "mania"
+            },
+            "special_actions": {
+                "space": "jump",
+                "enter": "celebrate"
+            }
+        },
+        "animation": {
+            "hand_speed": 0.15,
+            "key_press_duration": 0.1,
+            "face_transition_time": 0.2,
+            "idle_animation": {
+                "enabled": true,
+                "breathing": true,
+                "breathing_speed": 2.0
+            }
+        },
+        "rendering": {
+            "scale": 1.0,
+            "position": {
+                "x": 0,
+                "y": 0
+            },
+            "layers": {
+                "background": 0,
+                "cat_body": 1,
+                "left_hand": 2,
+                "right_hand": 3,
+                "keys": 4,
+                "face": 5,
+                "effects": 6
+            }
+        },
+        "audio": {
+            "enabled": false,
+            "reactive": false,
+            "threshold": 0.15,
+            "smoothing": 0.3
+        },
+        "metadata": {
+            "created": "2025-11-19",
+            "format_version": "1.0",
+            "compatible_with": "avatar-plugin v0.2.0+",
+            "license": "GPL-3.0",
+            "source": "https://github.com/a1928370421/Bongobs-Cat-Plugin"
+        }
+    }
+}
