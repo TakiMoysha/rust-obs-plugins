@@ -2,6 +2,7 @@ use obs_wrapper::{obs_register_module, obs_string, obs_sys, prelude::*, properti
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic;
 
 // Avatar loader module
 mod loader;
@@ -83,8 +84,8 @@ struct AvatarSource {
     /// Текущий активный режим
     current_mode: String,
 
-    /// Текущее выражение лица
-    current_face: String,
+    /// Текущее выражение лица (None = нет лица)
+    current_face: Option<String>,
 
     /// Состояние рук (левая и правая): текущий кадр анимации
     left_hand_frame: usize,
@@ -150,6 +151,33 @@ impl Sourceable for AvatarSource {
                     println!("  Available modes: {:?}", av.available_modes);
                     println!("  Face images: {} loaded", av.face_images.len());
                     println!("  Modes loaded: {}", av.modes.len());
+
+                    // Детальная информация о текущем режиме
+                    if let Some(mode) = av.get_mode(&current_mode) {
+                        println!("\n  Current mode '{}' details:", current_mode);
+                        let current_face: Option<String> = None; // This variable is not used elsewhere, so it's fine to define it here.
+                        println!("    Current face: {:?}", current_face);
+                        println!("    Background: {}", mode.background.is_some());
+                        println!("    Cat background: {}", mode.cat_background.is_some());
+                        println!("    Left hand: {}", mode.left_hand.is_some());
+                        if let Some(ref lh) = mode.left_hand {
+                            println!("      - up_image: {}", lh.up_image.path.display());
+                            println!("      - frame_images: {}", lh.frame_images.len());
+                        }
+                        println!("    Right hand: {}", mode.right_hand.is_some());
+                        if let Some(ref rh) = mode.right_hand {
+                            println!("      - up_image: {}", rh.up_image.path.display());
+                            println!("      - frame_images: {}", rh.frame_images.len());
+                        }
+                        println!("    Key images: {} keys", mode.key_images.len());
+                        for (key, _img) in &mode.key_images {
+                            println!("      - {}", key);
+                        }
+                    } else {
+                        eprintln!("  ✗ WARNING: Current mode '{}' not found!", current_mode);
+                        eprintln!("     Available modes: {:?}", av.available_modes);
+                    }
+
                     Some(av)
                 }
                 Err(e) => {
@@ -172,7 +200,10 @@ impl Sourceable for AvatarSource {
                 }
             }
         } else {
-            eprintln!("✗ Avatar path is neither file nor directory: {}", avatar_path.display());
+            eprintln!(
+                "✗ Avatar path is neither file nor directory: {}",
+                avatar_path.display()
+            );
             None
         };
 
@@ -186,7 +217,7 @@ impl Sourceable for AvatarSource {
             texture_cache: TextureCache::new(),
             avatar,
             current_mode,
-            current_face: "f1".to_string(),
+            current_face: None, // По умолчанию нет лица,
             left_hand_frame: 0,
             right_hand_frame: 0,
             pressed_keys: std::collections::HashSet::new(),
@@ -275,7 +306,6 @@ impl UpdateSource for AvatarSource {
     fn update(&mut self, settings: &mut DataObj, _context: &mut GlobalContext) {
         // Обновляем путь к аватару и перезагружаем если изменился
         if let Some(path) = settings.get::<Cow<'_, str>>(obs_string!("avatar_path")) {
-            println!("New avatar path: {}", path.as_ref());
             let new_path = PathBuf::from(path.as_ref());
             if new_path != self.avatar_path {
                 self.avatar_path = new_path.clone();
@@ -340,23 +370,26 @@ impl VideoRenderSource for AvatarSource {
         let Some(avatar) = avatar.as_ref() else {
             return;
         };
-        
+
         let Some(mode) = avatar.get_mode(current_mode) else {
-            static LOGGED_NO_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-            if !LOGGED_NO_MODE.load(std::sync::atomic::Ordering::Relaxed) {
-                eprintln!("✗ Mode '{}' not found. Available modes: {:?}", 
-                         current_mode, avatar.available_modes);
-                LOGGED_NO_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
+            static LOGGED_NO_MODE: atomic::AtomicBool = atomic::AtomicBool::new(false);
+            if !LOGGED_NO_MODE.load(atomic::Ordering::Relaxed) {
+                eprintln!(
+                    "✗ Mode '{}' not found. Available modes: {:?}",
+                    current_mode, avatar.available_modes
+                );
+                LOGGED_NO_MODE.store(true, atomic::Ordering::Relaxed);
             }
             return;
         };
 
         // Отладочный вывод один раз
-        static FIRST_RENDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+        static FIRST_RENDER: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(true);
         if FIRST_RENDER.load(std::sync::atomic::Ordering::Relaxed) {
             println!("\n=== AVATAR RENDERING ===");
             println!("Mode: {}", current_mode);
-            println!("Face: {}", current_face);
+            println!("Face: {:?}", current_face);
             println!("Has background: {}", mode.background.is_some());
             println!("Has cat_background: {}", mode.cat_background.is_some());
             println!("Has left_hand: {}", mode.left_hand.is_some());
@@ -365,67 +398,52 @@ impl VideoRenderSource for AvatarSource {
             FIRST_RENDER.store(false, std::sync::atomic::Ordering::Relaxed);
         }
 
-        unsafe {
-            // Получаем базовый effect ОДИН раз
-            let effect = obs_sys::obs_get_base_effect(obs_sys::obs_base_effect_OBS_EFFECT_DEFAULT);
-            let image_param = obs_sys::gs_effect_get_param_by_name(
-                effect,
-                "image\0".as_ptr() as *const i8,
-            );
-
-            // Хелпер для рисования спрайта (ПРАВИЛЬНЫЙ способ)
-            let mut draw_sprite = |image: &ImageData, x: f32, y: f32| {
-                if let Some(tex_ptr) = texture_cache.get_or_create(image) {
-                    // 1. Устанавливаем текстуру в шейдер
-                    obs_sys::gs_effect_set_texture(image_param, tex_ptr);
-                    
-                    // 2. Применяем трансформацию (если нужна позиция)
-                    if x != 0.0 || y != 0.0 {
-                        obs_sys::gs_matrix_push();
-                        let mut pos: obs_sys::vec3 = std::mem::zeroed();
-                        let ptr = &mut pos as *mut obs_sys::vec3 as *mut f32;
-                        *ptr.offset(0) = x;
-                        *ptr.offset(1) = y;
-                        *ptr.offset(2) = 0.0;
-                        *ptr.offset(3) = 0.0;
-                        obs_sys::gs_matrix_translate(&mut pos);
-                    }
-                    
-                    // 3. Рисуем спрайт
-                    obs_sys::gs_draw_sprite(tex_ptr, 0, image.width, image.height);
-                    
-                    // 4. Восстанавливаем матрицу
-                    if x != 0.0 || y != 0.0 {
-                        obs_sys::gs_matrix_pop();
-                    }
+        // Хелпер для рисования спрайта
+        // Изолируем unsafe в отдельную функцию для ясности
+        let draw_sprite = |texture_cache: &mut TextureCache, image: &ImageData, x: f32, y: f32| {
+            if let Some(tex_ptr) = texture_cache.get_or_create(image) {
+                // Unsafe блок изолирован и понятен что делает
+                unsafe {
+                    // ✅ ИСПОЛЬЗУЕМ obs_source_draw КАК В C++ ВЕРСИИ
+                    // Это правильный способ для source (не filter)
+                    obs_sys::obs_source_draw(
+                        tex_ptr,
+                        x as i32,           // x position
+                        y as i32,           // y position  
+                        0,                  // cx (0 = use texture width)
+                        0,                  // cy (0 = use texture height)
+                        false               // flip vertically
+                    );
                 }
-            };
-
-            // РЕНДЕРИМ ВСЕ СЛОИ (БЕЗ gs_effect_loop!)
-            
-            // 1. Отрисовка фона
-            if let Some(ref bg) = mode.background {
-                draw_sprite(bg, 0.0, 0.0);
             }
+        };
 
-            // 2. Отрисовка тела кота
-            if let Some(ref cat) = mode.cat_background {
-                draw_sprite(cat, 0.0, 0.0);
-            }
+        // ===== РЕНДЕРИМ ВСЕ СЛОИ (безопасная логика) =====
 
-            // 3. Отрисовка лица
-            if let Some(face) = avatar.face_images.get(current_face) {
-                draw_sprite(face, 0.0, 0.0);
-            }
+        // 1. Отрисовка фона
+        if let Some(ref bg) = mode.background {
+            draw_sprite(texture_cache, bg, 0.0, 0.0);
+        }
 
-            // 4. Отрисовка рук (пока только поднятые)
-            if let Some(ref hand) = mode.left_hand {
-                draw_sprite(&hand.up_image, 0.0, 0.0);
-            }
+        // 2. Отрисовка тела кота
+        if let Some(ref cat) = mode.cat_background {
+            draw_sprite(texture_cache, cat, 0.0, 0.0);
+        }
 
-            if let Some(ref hand) = mode.right_hand {
-                draw_sprite(&hand.up_image, 0.0, 0.0);
+        // 3. Отрисовка лица
+        if let Some(face_name) = current_face {
+            if let Some(face) = avatar.face_images.get(face_name) {
+                draw_sprite(texture_cache, face, 0.0, 0.0);
             }
+        }
+
+        // 4. Отрисовка рук (пока только поднятые)
+        if let Some(ref hand) = mode.left_hand {
+            draw_sprite(texture_cache, &hand.up_image, 0.0, 0.0);
+        }
+
+        if let Some(ref hand) = mode.right_hand {
+            draw_sprite(texture_cache, &hand.up_image, 0.0, 0.0);
         }
 
         // Отладочный вывод (реже)
@@ -439,23 +457,48 @@ impl VideoRenderSource for AvatarSource {
 }
 
 impl KeyClickSource for AvatarSource {
-    fn key_click(&mut self, _event: obs_sys::obs_key_event, pressed: bool) {
+    fn key_click(&mut self, event: obs_sys::obs_key_event, pressed: bool) {
         let Some(ref avatar) = self.avatar else {
             return;
         };
 
-        // Преобразуем код клавиши в строку (упрощенная версия)
-        // TODO: Реализовать полный маппинг vkey -> string
-        let key_str = "unknown".to_string(); // Placeholder
+        // Простой маппинг vkey -> string
+        let key_str = match event.native_vkey {
+            48..=57 => format!("{}", (event.native_vkey - 48) as u8 as char), // 0-9
+            65..=90 => format!("{}", (event.native_vkey) as u8 as char).to_lowercase(), // a-z
+            112..=123 => format!("f{}", event.native_vkey - 111), // f1-f12
+            27 => "escape".to_string(),
+            _ => "unknown".to_string(),
+        };
 
         if pressed {
             // Добавляем в набор нажатых клавиш
             self.pressed_keys.insert(key_str.clone());
 
-            // Проверяем, есть ли это выражение лица
+            // Логика переключения лиц по клавишам 1-4
+            let face_id = match key_str.as_str() {
+                "1" => Some("f1"),
+                "2" => Some("f2"),
+                "3" => Some("f3"),
+                "4" => Some("f4"),
+                "0" | "escape" => None, // Сброс лица
+                _ => None,
+            };
+
+            if let Some(fid) = face_id {
+                // Проверяем существует ли такое лицо
+                if avatar.face_images.contains_key(fid) {
+                    println!("Switching to face: {}", fid);
+                    self.current_face = Some(fid.to_string());
+                }
+            } else if key_str == "0" || key_str == "escape" {
+                println!("Clearing face");
+                self.current_face = None;
+            }
+
+            // Проверяем, есть ли это выражение лица (из конфига)
             if let Some(_face_img) = avatar.get_face_by_key(&key_str) {
-                self.current_face = key_str.clone();
-                // TODO: Обновить текстуру лица
+                self.current_face = Some(key_str.clone());
             }
 
             // Проверяем, есть ли это клавиша в текущем режиме

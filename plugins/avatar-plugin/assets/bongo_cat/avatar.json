@@ -6,7 +6,7 @@
         "description": "Classic Bongo Cat avatar with keyboard mode support",
         "settings": {
             "default_mode": "keyboard",
-            "default_face": "f1",
+            "default_face": null,
             "canvas_width": 1280,
             "canvas_height": 768,
             "fps": 60

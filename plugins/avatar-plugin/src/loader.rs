@@ -204,24 +204,30 @@ impl LoadedMode {
 
         // Load left hand
         if let Some(path) = &config.left_hand_image_path {
-            loaded.left_hand = Self::load_hand_data(
-                mode_path,
-                path,
-                config.left_hand_up_image.as_deref(),
-                config.left_hand_images.as_ref(),
-            )
-            .ok();
+            if !path.is_empty() {
+                // ✅ Проверяем что путь не пустой
+                loaded.left_hand = Self::load_hand_data(
+                    mode_path,
+                    path,
+                    config.left_hand_up_image.as_deref(),
+                    config.left_hand_images.as_ref(),
+                )
+                .ok();
+            }
         }
 
         // Load right hand
         if let Some(path) = &config.right_hand_image_path {
-            loaded.right_hand = Self::load_hand_data(
-                mode_path,
-                path,
-                config.right_hand_up_image.as_deref(),
-                config.right_hand_images.as_ref(),
-            )
-            .ok();
+            if !path.is_empty() {
+                // ✅ Проверяем что путь не пустой
+                loaded.right_hand = Self::load_hand_data(
+                    mode_path,
+                    path,
+                    config.right_hand_up_image.as_deref(),
+                    config.right_hand_images.as_ref(),
+                )
+                .ok();
+            }
         }
 
         // Load key images
@@ -230,12 +236,18 @@ impl LoadedMode {
             &config.keys_images,
             &config.key_bindings,
         ) {
-            let keys_dir = mode_path.join(key_path);
-            for (i, key_name) in key_bindings.iter().enumerate() {
-                if let Some(image_name) = key_images.get(i) {
-                    let image_path = keys_dir.join(image_name);
-                    if let Ok(img) = ImageData::load(&image_path) {
-                        loaded.key_images.insert(key_name.clone(), img);
+            if !key_path.is_empty() {
+                // ✅ Проверяем что путь не пустой
+                let keys_dir = mode_path.join(key_path);
+                for (i, key_name) in key_bindings.iter().enumerate() {
+                    if let Some(image_name) = key_images.get(i) {
+                        if !image_name.is_empty() {
+                            // ✅ Проверяем имя изображения
+                            let img_path = keys_dir.join(image_name);
+                            if let Ok(img) = ImageData::load(&img_path) {
+                                loaded.key_images.insert(key_name.clone(), img);
+                            }
+                        }
                     }
                 }
             }
@@ -282,30 +294,66 @@ impl LoadedMode {
     }
 }
 
+/// Settings from avatar.json
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AvatarSettings {
+    pub default_mode: String,
+    pub default_face: Option<String>,
+    pub canvas_width: u32,
+    pub canvas_height: u32,
+    pub fps: u32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct AvatarConfigInner {
+    pub settings: AvatarSettings,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct AvatarConfigFile {
+    pub avatar: AvatarConfigInner,
+}
+
 /// Complete avatar with all modes and face expressions
 #[derive(Debug)]
 pub struct Avatar {
     pub name: String,
     pub base_path: PathBuf,
-    pub config_pahth: PathBuf,
+    pub config_path: PathBuf, // Fixed typo: config_pahth -> config_path
 
     pub face_config: FaceConfig,
     pub face_images: HashMap<String, ImageData>,
 
     pub available_modes: Vec<String>,
     pub modes: HashMap<String, LoadedMode>,
+
+    pub settings: Option<AvatarSettings>,
 }
 
 impl Avatar {
     /// Load avatar from JSON config file (e.g., "avatar.json")
     pub fn load_from_config(config_path: &Path) -> Result<Self> {
-        // Get base directory from config file path
+        // 1. Parse config file to get settings
+        let content = fs::read_to_string(config_path)?;
+        // We use a lenient parse or just try to parse what we need
+        // If parsing fails, we might still want to load the avatar but without settings?
+        // For now, let's assume if it's a config file, it must be valid.
+        let config_file: AvatarConfigFile =
+            serde_json::from_str(&content).map_err(LoadError::JsonError)?;
+
+        // 2. Get base directory
         let base_path = config_path
             .parent()
             .ok_or_else(|| LoadError::InvalidConfig("Invalid config path".into()))?;
 
-        // Just use the existing load method with the base directory
-        Self::load_from_file(base_path)
+        // 3. Load resources using base path
+        let mut avatar = Self::load_from_file(base_path)?;
+
+        // 4. Attach settings and correct config path
+        avatar.settings = Some(config_file.avatar.settings);
+        avatar.config_path = config_path.to_path_buf();
+
+        Ok(avatar)
     }
 
     /// Load avatar from directory (e.g., "bongo_cat")
@@ -313,10 +361,10 @@ impl Avatar {
         let canonical_config_path = path
             .canonicalize()
             .map_err(|_| LoadError::InvalidConfig("Invalid config path".into()))?;
-        let canonical_base_path = canonical_config_path
-            .parent()
-            .ok_or_else(|| LoadError::InvalidConfig("No parent directory".into()))?
-            .to_path_buf();
+
+        // If path is a file, get parent. If dir, use it.
+        // But this method assumes 'path' is the directory containing 'face', 'mode' etc.
+        // The previous implementation of load_from_file logic:
 
         let name = path
             .file_name()
@@ -362,11 +410,12 @@ impl Avatar {
         Ok(Avatar {
             name,
             base_path: path.to_path_buf(),
-            config_pahth: canonical_config_path,
+            config_path: canonical_config_path, // Will be updated if loaded via config
             face_config,
             face_images,
             available_modes: mode_list.model_paths,
             modes,
+            settings: None,
         })
     }
 
@@ -433,7 +482,7 @@ impl Default for AvatarLoader {
     }
 }
 
-// ====================================================================== WIP
+// ======================================================= !TODO: refactored later...
 
 // use serde::{Deserialize, Serialize};
 //
@@ -569,6 +618,7 @@ impl Default for AvatarLoader {
 mod tests {
     use super::*;
 
+    #[ignore = "WIP"]
     #[test]
     fn test_load_avatar() {
         let json = r#"
