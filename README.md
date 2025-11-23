@@ -2,8 +2,51 @@
 
 - init submodules (obs for obs-sys)
 - update obs `git submodule update --remote`
-- update rust-bindings 
- 
+- update rust-bindings
+
+- **`module`**: defining and registering OBS modules (plugins).
+- **`source`**: traits and types for creating sources, filters, and transitions.
+- **`properties`**: API for defining user-configurable properties for sources.
+- **`data`**: wrapper around `obs_data_t` for handling settings and configuration data.
+- **`string`**: utilities for handling OBS-specific strings (`ObsString`).
+- **`log`**: logging utilities to print to the OBS log.
+
+> [!note] If you create separate threads, added stop signal in `unload` method.
+
+| Trait                 | Description                                   | Builder Method             |
+| :-------------------- | :-------------------------------------------- | :------------------------- |
+| `GetNameSource`       | Returns the display name of the source.       | `.enable_get_name()`       |
+| `GetWidthSource`      | Returns the width of the source.              | `.enable_get_width()`      |
+| `GetHeightSource`     | Returns the height of the source.             | `.enable_get_height()`     |
+| `VideoRenderSource`   | Handles video rendering.                      | `.enable_video_render()`   |
+| `AudioRenderSource`   | Handles audio rendering.                      | `.enable_audio_render()`   |
+| `UpdateSource`        | Called when settings are updated.             | `.enable_update()`         |
+| `GetPropertiesSource` | Defines properties (settings) for the source. | `.enable_get_properties()` |
+| `GetDefaultsSource`   | Sets default values for settings.             | `.enable_get_defaults()`   |
+| `VideoTickSource`     | Called every video frame.                     | `.enable_video_tick()`     |
+| `ActivateSource`      | Called when the source becomes active.        | `.enable_activate()`       |
+| `DeactivateSource`    | Called when the source becomes inactive.      | `.enable_deactivate()`     |
+| `MouseClickSource`    | Handles mouse clicks.                         | `.enable_mouse_click()`    |
+| `MouseMoveSource`     | Handles mouse movement.                       | `.enable_mouse_move()`     |
+| `MouseWheelSource`    | Handles mouse wheel events.                   | `.enable_mouse_wheel()`    |
+| `KeyClickSource`      | Handles keyboard events.                      | `.enable_key_click()`      |
+| `FocusSource`         | Handles focus events.                         | `.enable_focus()`          |
+| `FilterVideoSource`   | For filters: process video data.              | `.enable_filter_video()`   |
+| `FilterAudioSource`   | For filters: process audio data.              | `.enable_filter_audio()`   |
+
+### Property Types (`GetPropertiesSource`)
+
+- **`NumberProp`**: Integer or Float. Can be configured as a slider.
+- **`BoolProp`**: Checkbox.
+- **`TextProp`**: Text input (Default, Password, Multiline).
+- **`ColorProp`**: Color picker.
+- **`PathProp`**: File or directory picker.
+- **`ListProp`**: Dropdown list (via `props.add_list`).
+- **`FontProp`**: Font selection.
+- **`EditableListProp`**: Editable list of strings or files.
+
+---
+
 # Rust OBS Wrapper
 
 [![Build Status](https://travis-ci.org/bennetthardwick/rust-obs-plugins.svg?branch=master)](https://travis-ci.org/bennetthardwick/rust-obs-plugins)
@@ -14,10 +57,11 @@ A safe wrapper around the OBS API, useful for creating OBS sources, filters and 
 This repo also includes plugins creating using the wrapper in the `/plugins` folder.
 
 ## Plugins
-| Folder                    | Description                                                      |
-|---------------------------|------------------------------------------------------------------|
-| /scroll-focus-filter      | an OBS filter that will zoom into the currently focused X window |
-| /rnnoise-denoiser-filter  | an OBS filter for removing background noise from your Mic        |
+
+| Folder                   | Description                                                      |
+| ------------------------ | ---------------------------------------------------------------- |
+| /scroll-focus-filter     | an OBS filter that will zoom into the currently focused X window |
+| /rnnoise-denoiser-filter | an OBS filter for removing background noise from your Mic        |
 
 ## Usage
 
@@ -85,14 +129,15 @@ impl GetNameSource for TestSource {
 
 // Implement the Module trait for TestModule. This will handle the creation of the source and
 // has some methods for telling OBS a bit about itself.
-impl Module for TestModule {
-    fn new(context: ModuleRef) -> Self {
-        Self { context }
-    }
-
-    fn get_ctx(&self) -> &ModuleRef {
-        &self.context
-    }
+pub trait Module {
+    fn new(ctx: ModuleRef) -> Self;
+    fn get_ctx(&self) -> &ModuleRef;
+    fn unload(&mut self) {}
+    fn post_load(&mut self) {}
+    // about plugin
+    fn description() -> ObsString;
+    fn name() -> ObsString;
+    fn author() -> ObsString;
 
     // Load the module - create all sources, returning true if all went well.
     fn load(&mut self, load_context: &mut LoadContext) -> bool {
@@ -109,18 +154,6 @@ impl Module for TestModule {
 
         // Nothing could have gone wrong, so return true.
         true
-    }
-
-    fn description() -> ObsString {
-        obs_string!("A great test module.")
-    }
-
-    fn name() -> ObsString {
-        obs_string!("Test Module")
-    }
-
-    fn author() -> ObsString {
-        obs_string!("Bennett")
     }
 }
 

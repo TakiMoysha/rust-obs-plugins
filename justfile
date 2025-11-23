@@ -8,12 +8,13 @@ init:
 test package *ARGS:
   cargo test --package={{package}} {{ARGS}}
 
-[doc("ex: just build avatar-plugin")]
+[doc("ex: just build avatar-plugin --features wayland")]
 build plugin *ARGS:
   cargo build --release --package={{plugin}} {{ARGS}}
     
 @obs-test:
   env OBS_PLUGINS_PATH=$(pwd)/target/release \
     OBS_PLUGINS_DATA_PATH=$(pwd)/target/release \
+    OBS_WINDOW_TITLE="DebugApplication" \
     obs
 
