@@ -7,6 +7,9 @@ use std::sync::atomic;
 // Avatar loader module
 mod loader;
 
+// Input capture module (cross-platform keyboard/mouse hooks)
+mod input_capture;
+
 use loader::{Avatar, AvatarLoader, ImageData};
 
 /// Кэш текстур для предотвращения повторной загрузки
@@ -109,6 +112,10 @@ struct AvatarSource {
     /// Ширина и высота canvas
     width: u32,
     height: u32,
+
+    /// Input capture для перехвата клавиш (только для Wayland)
+    #[cfg(all(target_os = "linux", feature = "wayland"))]
+    input_capture: Option<input_capture::InputCapture>,
 }
 
 impl Sourceable for AvatarSource {
@@ -146,11 +153,11 @@ impl Sourceable for AvatarSource {
             println!("Loading avatar from config file: {}", avatar_path.display());
             match Avatar::load_from_config(&avatar_path) {
                 Ok(av) => {
-                    println!("✓ Avatar loaded successfully!");
-                    println!("  Name: {}", av.name);
-                    println!("  Available modes: {:?}", av.available_modes);
-                    println!("  Face images: {} loaded", av.face_images.len());
-                    println!("  Modes loaded: {}", av.modes.len());
+                    obs_wrapper::log::info!("✓\tAvatar loaded successfully!");
+                    obs_wrapper::log::info!("\tName: {}", av.name);
+                    obs_wrapper::log::info!("\tAvailable modes: {:?}", av.available_modes);
+                    obs_wrapper::log::info!("\tFace images: {} loaded", av.face_images.len());
+                    obs_wrapper::log::info!("\tModes loaded: {}", av.modes.len());
 
                     // Детальная информация о текущем режиме
                     if let Some(mode) = av.get_mode(&current_mode) {
@@ -227,6 +234,20 @@ impl Sourceable for AvatarSource {
             avatar_path,
             width,
             height,
+
+            #[cfg(all(target_os = "linux", feature = "wayland"))]
+            input_capture: {
+                match input_capture::InputCapture::new() {
+                    Ok(capture) => {
+                        println!("✓ Input capture initialized (polling mode)");
+                        Some(capture)
+                    }
+                    Err(e) => {
+                        eprintln!("✗ Failed to initialize input capture: {:?}", e);
+                        None
+                    }
+                }
+            },
         }
     }
 }
@@ -348,6 +369,38 @@ impl UpdateSource for AvatarSource {
 
 impl VideoTickSource for AvatarSource {
     fn video_tick(&mut self, _seconds: f32) {
+        // Опрашиваем input capture (Wayland)
+        #[cfg(all(target_os = "linux", feature = "wayland"))]
+        if let Some(ref mut capture) = self.input_capture {
+            let events = capture.poll();
+            for event in events {
+                match event {
+                    input_capture::InputEvent::KeyPress(key) => {
+                        println!("🎹 Key PRESSED: {} (0x{:04X})", key, key);
+                        self.pressed_keys.insert(key.to_string());
+
+                        // Показываем распространенные клавиши
+                        match key {
+                            1 => println!("   → ESC"),
+                            28 => println!("   → ENTER"),
+                            57 => println!("   → SPACE"),
+                            30 => println!("   → A"),
+                            48 => println!("   → B"),
+                            _ => {}
+                        }
+                    }
+                    input_capture::InputEvent::KeyRelease(key) => {
+                        println!("🎹 Key RELEASED: {} (0x{:04X})", key, key);
+                        self.pressed_keys.remove(&key.to_string());
+                    }
+                    // if !running.load(Ordering::Relaxed) {
+                    //     break;
+                    // }
+                    _ => {}
+                }
+            }
+        }
+
         // Обновляем состояние речи на основе уровня аудио
         self.is_speaking = self.audio_level > self.speech_threshold;
 
@@ -407,12 +460,11 @@ impl VideoRenderSource for AvatarSource {
                     // ✅ ИСПОЛЬЗУЕМ obs_source_draw КАК В C++ ВЕРСИИ
                     // Это правильный способ для source (не filter)
                     obs_sys::obs_source_draw(
-                        tex_ptr,
-                        x as i32,           // x position
-                        y as i32,           // y position  
-                        0,                  // cx (0 = use texture width)
-                        0,                  // cy (0 = use texture height)
-                        false               // flip vertically
+                        tex_ptr, x as i32, // x position
+                        y as i32, // y position
+                        0,        // cx (0 = use texture width)
+                        0,        // cy (0 = use texture height)
+                        false,    // flip vertically
                     );
                 }
             }
@@ -466,7 +518,7 @@ impl KeyClickSource for AvatarSource {
         let key_str = match event.native_vkey {
             48..=57 => format!("{}", (event.native_vkey - 48) as u8 as char), // 0-9
             65..=90 => format!("{}", (event.native_vkey) as u8 as char).to_lowercase(), // a-z
-            112..=123 => format!("f{}", event.native_vkey - 111), // f1-f12
+            112..=123 => format!("f{}", event.native_vkey - 111),             // f1-f12
             27 => "escape".to_string(),
             _ => "unknown".to_string(),
         };
@@ -542,7 +594,7 @@ impl MouseClickSource for AvatarSource {
 }
 
 impl MouseMoveSource for AvatarSource {
-    fn mouse_move(&mut self, event: obs_sys::obs_mouse_event, _leave: bool) {
+    fn mouse_move(&mut self, _event: obs_sys::obs_mouse_event, _leave: bool) {
         // TODO: Добавить логику отслеживания мыши глазами аватара
         // let mouse_x = event.x;
         // let mouse_y = event.y;
@@ -605,6 +657,14 @@ impl Module for AvatarModule {
         load_context.register_source(source);
 
         true
+    }
+
+    fn unload(&mut self) {
+        println!("Avatar Plugin: Unloading module...");
+        // Note: Resources (textures, input devices) are automatically cleaned up
+        // when AvatarSource instances are dropped by OBS.
+        // No manual cleanup is required here for the current architecture.
+        println!("Avatar Plugin: Module unloaded successfully.");
     }
 
     fn description() -> ObsString {
