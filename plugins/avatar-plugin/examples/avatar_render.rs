@@ -15,7 +15,7 @@ fn load_texture_from_image_data(image_data: &ImageData) -> Texture2D {
 #[macroquad::main("Avatar Render")]
 async fn main() {
     // Load avatar
-    let avatar_path = Path::new("assets/bongo_cat/avatar.json");
+    let avatar_path = Path::new("plugins/avatar-plugin/assets/bongo_cat/avatar.json");
     
     let avatar = match Avatar::load_from_config(avatar_path) {
         Ok(av) => av,

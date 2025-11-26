@@ -1,6 +1,3 @@
-use std::error::Error;
-use std::fmt;
-
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 use std::os::unix::io::AsRawFd;
 
@@ -126,9 +123,8 @@ mod x11 {
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod wayland {
     use super::*;
-    use evdev::{Device, InputEvent, Key};
+    use evdev::{Device, EventType, KeyCode};
     use std::os::unix::io::AsRawFd;
-    use std::path::PathBuf;
 
     pub struct WaylandInputCapture {
         devices: Vec<Device>,
@@ -144,10 +140,9 @@ mod wayland {
                 ));
             }
 
-            // Находим все клавиатуры
             let mut keyboards = Vec::new();
 
-            // Сканируем event* файлы
+            // Scan event* files
             if let Ok(entries) = std::fs::read_dir(input_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
@@ -177,8 +172,8 @@ mod wayland {
             let mut devices = Vec::new();
             for path in keyboards {
                 match Device::open(&path) {
-                    Ok(mut device) => {
-                        // Устанавливаем NON-BLOCKING режим
+                    Ok(device) => {
+                        // Set NON-BLOCKING mode
                         let fd = device.as_raw_fd();
                         unsafe {
                             let flags = libc::fcntl(fd, libc::F_GETFL);
@@ -203,15 +198,19 @@ mod wayland {
             let mut events = Vec::new();
 
             for device in &mut self.devices {
-                // fetch_events is non-blocking (due to 0_NONBLOCK flag)
+                // fetch_events is non-blocking (due to O_NONBLOCK flag)
                 match device.fetch_events() {
                     Ok(iterator) => {
                         for ev in iterator {
-                            if let InputEventKind::Key(key) = ev.event_type() {
+                            // In evdev 0.13, event_type() returns EventType
+                            // We need to check if it's a key event
+                            if ev.event_type() == EventType::KEY {
+                                // For key events, the code is the key code
+                                let key_code = ev.code();
                                 let event = match ev.value() {
-                                    1 => Some(InputEvent::KeyPress(key.code().into())),
-                                    0 => Some(InputEvent::KeyRelease(key.code().into())),
-                                    _ => None, // Игнорируем repeat events (value=2)
+                                    1 => Some(InputEvent::KeyPress(key_code as u32)),
+                                    0 => Some(InputEvent::KeyRelease(key_code as u32)),
+                                    _ => None, // Ignore repeat events (value=2)
                                 };
 
                                 if let Some(e) = event {
@@ -221,7 +220,7 @@ mod wayland {
                         }
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                    Err(e) => {}
+                    Err(_e) => {}
                 }
             }
 
@@ -230,9 +229,11 @@ mod wayland {
     }
 
     fn is_keyboard(device: &Device) -> bool {
-        // Проверяем наличие клавиш A, Z и ENTER
+        // Check for presence of keys A, Z and ENTER
         device.supported_keys().map_or(false, |keys| {
-            keys.contains(Key::KEY_A) && keys.contains(Key::KEY_Z) && keys.contains(Key::KEY_ENTER)
+            keys.contains(KeyCode::KEY_A)
+                && keys.contains(KeyCode::KEY_Z)
+                && keys.contains(KeyCode::KEY_ENTER)
         })
     }
 }
