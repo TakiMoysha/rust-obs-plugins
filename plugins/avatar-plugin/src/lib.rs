@@ -4,11 +4,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic;
 
-// Avatar loader module
-mod loader;
-
-// Input capture module (cross-platform keyboard/mouse hooks)
-mod input_capture;
+pub mod loader;
+pub mod input_capture;
 
 use loader::{Avatar, AvatarLoader, ImageData};
 
@@ -153,11 +150,11 @@ impl Sourceable for AvatarSource {
             println!("Loading avatar from config file: {}", avatar_path.display());
             match Avatar::load_from_config(&avatar_path) {
                 Ok(av) => {
-                    obs_wrapper::log::info!("✓\tAvatar loaded successfully!");
-                    obs_wrapper::log::info!("\tName: {}", av.name);
-                    obs_wrapper::log::info!("\tAvailable modes: {:?}", av.available_modes);
-                    obs_wrapper::log::info!("\tFace images: {} loaded", av.face_images.len());
-                    obs_wrapper::log::info!("\tModes loaded: {}", av.modes.len());
+                    println!("✓\tAvatar loaded successfully!");
+                    println!("\tName: {}", av.name);
+                    println!("\tAvailable modes: {:?}", av.available_modes);
+                    println!("\tFace images: {} loaded", av.face_images.len());
+                    println!("\tModes loaded: {}", av.modes.len());
 
                     // Детальная информация о текущем режиме
                     if let Some(mode) = av.get_mode(&current_mode) {

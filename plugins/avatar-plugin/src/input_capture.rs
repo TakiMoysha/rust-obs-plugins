@@ -36,15 +36,15 @@ pub enum InputCaptureError {
 pub struct InputCapture {
     #[cfg(target_os = "windows")]
     inner: windows::WindowsInputCapture,
-    
+
     #[cfg(all(target_os = "linux", feature = "x11"))]
     inner: x11::X11InputCapture,
-    
+
     #[cfg(all(target_os = "linux", feature = "wayland"))]
     inner: wayland::WaylandInputCapture,
-    
+
     #[cfg(not(any(
-        target_os = "windows", 
+        target_os = "windows",
         all(target_os = "linux", feature = "x11"),
         all(target_os = "linux", feature = "wayland")
     )))]
@@ -56,20 +56,20 @@ impl InputCapture {
     pub fn new() -> Result<Self, InputCaptureError> {
         #[cfg(target_os = "windows")]
         let inner = windows::WindowsInputCapture::new()?;
-        
+
         #[cfg(all(target_os = "linux", feature = "x11"))]
         let inner = x11::X11InputCapture::new()?;
-        
+
         #[cfg(all(target_os = "linux", feature = "wayland"))]
         let inner = wayland::WaylandInputCapture::new()?;
-        
+
         #[cfg(not(any(
-            target_os = "windows", 
+            target_os = "windows",
             all(target_os = "linux", feature = "x11"),
             all(target_os = "linux", feature = "wayland")
         )))]
         let inner = unsupported::UnsupportedInputCapture::new()?;
-        
+
         Ok(Self { inner })
     }
 
@@ -126,9 +126,9 @@ mod x11 {
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod wayland {
     use super::*;
-    use evdev::{Device, InputEventKind, Key};
-    use std::path::PathBuf;
+    use evdev::{Device, InputEvent, Key};
     use std::os::unix::io::AsRawFd;
+    use std::path::PathBuf;
 
     pub struct WaylandInputCapture {
         devices: Vec<Device>,
@@ -136,7 +136,7 @@ mod wayland {
 
     impl WaylandInputCapture {
         pub fn new() -> Result<Self, InputCaptureError> {
-            // Проверяем доступ к /dev/input
+            // check access to /dev/input
             let input_dir = std::path::Path::new("/dev/input");
             if !input_dir.exists() {
                 return Err(InputCaptureError::InitError(
@@ -146,18 +146,17 @@ mod wayland {
 
             // Находим все клавиатуры
             let mut keyboards = Vec::new();
-            
+
             // Сканируем event* файлы
             if let Ok(entries) = std::fs::read_dir(input_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if let Some(fname) = path.file_name().and_then(|n| n.to_str()) {
                         if fname.starts_with("event") {
-                            // Пробуем открыть устройство
                             if let Ok(device) = Device::open(&path) {
-                                // Проверяем, является ли устройство клавиатурой
                                 if is_keyboard(&device) {
-                                    println!("Found keyboard: {} ({})", 
+                                    println!(
+                                        "Found keyboard: {} ({})",
                                         device.name().unwrap_or("Unknown"),
                                         path.display()
                                     );
@@ -187,7 +186,7 @@ mod wayland {
                                 libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
                             }
                         }
-                        
+
                         println!("Opened device (non-blocking): {}", path.display());
                         devices.push(device);
                     }
@@ -197,41 +196,32 @@ mod wayland {
                 }
             }
 
-            Ok(Self {
-                devices,
-            })
+            Ok(Self { devices })
         }
 
         pub fn poll(&mut self) -> Vec<InputEvent> {
             let mut events = Vec::new();
 
             for device in &mut self.devices {
-                // fetch_events теперь не блокирует благодаря O_NONBLOCK
+                // fetch_events is non-blocking (due to 0_NONBLOCK flag)
                 match device.fetch_events() {
                     Ok(iterator) => {
                         for ev in iterator {
-                            if let InputEventKind::Key(key) = ev.kind() {
+                            if let InputEventKind::Key(key) = ev.event_type() {
                                 let event = match ev.value() {
                                     1 => Some(InputEvent::KeyPress(key.code().into())),
                                     0 => Some(InputEvent::KeyRelease(key.code().into())),
                                     _ => None, // Игнорируем repeat events (value=2)
                                 };
-                                
+
                                 if let Some(e) = event {
                                     events.push(e);
                                 }
                             }
                         }
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        // Нет событий, это нормально для non-blocking
-                        continue;
-                    }
-                    Err(e) => {
-                        // Другая ошибка (например, устройство отключено)
-                        // Можно логировать, но не спамить
-                        // eprintln!("Error polling device: {}", e);
-                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                    Err(e) => {}
                 }
             }
 
@@ -242,15 +232,13 @@ mod wayland {
     fn is_keyboard(device: &Device) -> bool {
         // Проверяем наличие клавиш A, Z и ENTER
         device.supported_keys().map_or(false, |keys| {
-            keys.contains(Key::KEY_A) && 
-            keys.contains(Key::KEY_Z) && 
-            keys.contains(Key::KEY_ENTER)
+            keys.contains(Key::KEY_A) && keys.contains(Key::KEY_Z) && keys.contains(Key::KEY_ENTER)
         })
     }
 }
 
 #[cfg(not(any(
-    target_os = "windows", 
+    target_os = "windows",
     all(target_os = "linux", feature = "x11"),
     all(target_os = "linux", feature = "wayland")
 )))]
