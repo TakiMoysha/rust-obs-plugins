@@ -1,8 +1,8 @@
 use macroquad::prelude::*;
 use std::path::Path;
+use std::collections::HashSet;
 use avatarplugin::loader::{Avatar, ImageData};
-
-
+use avatarplugin::input_capture::{InputCapture, InputEvent};
 
 fn load_texture_from_image_data(image_data: &ImageData) -> Texture2D {
     Texture2D::from_rgba8(
@@ -44,7 +44,6 @@ async fn main() {
     let right_hand_tex = mode.right_hand.as_ref().map(|h| load_texture_from_image_data(&h.up_image));
 
     // Load face textures
-    // For simplicity, let's just load the default face if available
     let default_face_name = avatar.settings.as_ref().and_then(|s| s.default_face.as_ref());
     let face_tex = if let Some(face_name) = default_face_name {
          avatar.get_face_by_key(face_name).map(load_texture_from_image_data)
@@ -52,10 +51,54 @@ async fn main() {
         None
     };
 
+    // Initialize input capture
+    let mut input_capture = match InputCapture::new() {
+        Ok(capture) => {
+            println!("✓ Input capture initialized");
+            Some(capture)
+        }
+        Err(e) => {
+            eprintln!("✗ Failed to initialize input capture: {:?}", e);
+            eprintln!("  Continuing without input capture (macroquad keys only)");
+            None
+        }
+    };
+
+    // Track pressed keys
+    let mut pressed_keys: HashSet<u32> = HashSet::new();
+    let mut last_events: Vec<String> = Vec::new();
+
     loop {
+        // Check for ESC key (macroquad)
         if is_key_down(KeyCode::Escape) {
             break;
         }
+
+        // Poll input capture events
+        if let Some(ref mut capture) = input_capture {
+            let events = capture.poll();
+            for event in events {
+                match event {
+                    InputEvent::KeyPress(code) => {
+                        pressed_keys.insert(code);
+                        last_events.push(format!("↓ Key {:#06x}", code));
+                        // Keep only last 10 events
+                        if last_events.len() > 10 {
+                            last_events.remove(0);
+                        }
+                    }
+                    InputEvent::KeyRelease(code) => {
+                        pressed_keys.remove(&code);
+                        last_events.push(format!("↑ Key {:#06x}", code));
+                        if last_events.len() > 10 {
+                            last_events.remove(0);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         clear_background(LIGHTGRAY);
 
         // Draw Background
@@ -81,9 +124,55 @@ async fn main() {
             draw_texture(tex, 0.0, 0.0, WHITE);
         }
 
+        // Draw UI overlay
         draw_text(&format!("Mode: {}", mode.name), 20.0, 20.0, 30.0, BLACK);
         draw_text("Press ESC to exit", 20.0, 50.0, 20.0, DARKGRAY);
+        
+        // Draw input capture status
+        let status_y = 80.0;
+        if input_capture.is_some() {
+            draw_text(
+                &format!("Input Capture: Active ({} keys pressed)", pressed_keys.len()),
+                20.0,
+                status_y,
+                20.0,
+                DARKGREEN
+            );
+        } else {
+            draw_text("Input Capture: Disabled", 20.0, status_y, 20.0, RED);
+        }
+
+        // Draw pressed keys
+        if !pressed_keys.is_empty() {
+            let mut y = status_y + 30.0;
+            draw_text("Pressed keys:", 20.0, y, 18.0, BLACK);
+            y += 20.0;
+            
+            for (i, key) in pressed_keys.iter().enumerate() {
+                if i >= 5 { // Show max 5 keys
+                    draw_text("...", 40.0, y, 16.0, DARKGRAY);
+                    break;
+                }
+                draw_text(&format!("  {:#06x}", key), 40.0, y, 16.0, BLUE);
+                y += 18.0;
+            }
+        }
+
+        // Draw recent events log
+        if !last_events.is_empty() {
+            let log_x = screen_width() - 250.0;
+            let mut y = 20.0;
+            draw_text("Event Log:", log_x, y, 18.0, BLACK);
+            y += 20.0;
+            
+            for event in last_events.iter().rev().take(10) {
+                draw_text(event, log_x, y, 14.0, DARKGRAY);
+                y += 16.0;
+            }
+        }
 
         next_frame().await
     }
+
+    println!("Shutting down...");
 }
