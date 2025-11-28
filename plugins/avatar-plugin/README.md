@@ -51,6 +51,15 @@ bongo_cat/
 
 ## Implementation
 
+### Deformation (moc3 file, live2d cubism)
+
+Live2D Cubims SDK - проприетарная либа, и референс-проекте использует ее, под rust нету порта.
+`.moc3` - скомпилированный файл модели Live2D Cubism 3. Банрный формат, содержит mesh данные (deformation), параметры, деформеры, части модели.
+В reference-проекте загружается через sdk, прогидывает параметры (input) и отрисовыает через нее.
+
+> [!note] сейчас я пишу для голого png.
+> треубется добавить физику и деформацию
+
 ### Windows
 
 - Windows Hooks API
@@ -79,6 +88,11 @@ let fd = device.as_raw_fd();
 let flags = libc::fcntl(fd, libc::F_GETFL);
 libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
 ```
+
+## Examples
+
+- [[./examples/wayland_keyboard_capture.rs]] - демпонстрация захвата input за wayland
+- [[./examples/avatar_render.rs]] - демпонстрация рендера аватара c деформацией и анимациями
 
 ## References
 
