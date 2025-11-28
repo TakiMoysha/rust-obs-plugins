@@ -4,7 +4,11 @@ init:
   cargo build --all
 
 
-[doc("ex: just test avatar-plugin")]
+[doc("ex: just example avatar-plugin avatar_render --features wayland")]
+example package example_name *ARGS:
+  cargo run --release --package {{package}} --example {{example_name}} {{ARGS}}
+
+[doc("ex: just test avatar-plugin --features wayland")]
 test package *ARGS:
   cargo test --package={{package}} {{ARGS}}
 
