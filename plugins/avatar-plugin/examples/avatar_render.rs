@@ -97,6 +97,52 @@ impl TextureRenderer for DeformationRenderer {
     }
 }
 
+/// Hand animation state
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum HandState {
+    Up,
+    Down,
+}
+
+/// Key press animation renderer - swaps hand textures based on key presses
+struct KeyPressAnimationRenderer<'a> {
+    hand_state: HandState,
+    frames: Option<&'a Vec<Texture2D>>,
+    frame_index: usize,
+}
+
+impl<'a> KeyPressAnimationRenderer<'a> {
+    fn new(hand_state: HandState, frames: Option<&'a Vec<Texture2D>>, frame_index: usize) -> Self {
+        Self {
+            hand_state,
+            frames,
+            frame_index,
+        }
+    }
+}
+
+impl<'a> TextureRenderer for KeyPressAnimationRenderer<'a> {
+    fn render(&self, texture: &Texture2D, position: Vec2) {
+        let tex_to_draw = match self.hand_state {
+            HandState::Up => texture,
+            HandState::Down => {
+                // If we have frames, use the selected frame, otherwise use default texture
+                if let Some(frames) = self.frames {
+                    if !frames.is_empty() {
+                        &frames[self.frame_index % frames.len()]
+                    } else {
+                        texture
+                    }
+                } else {
+                    texture
+                }
+            }
+        };
+
+        draw_texture(tex_to_draw, position.x, position.y, WHITE);
+    }
+}
+
 /// Layer - represents a drawable layer with optional texture
 struct Layer {
     #[allow(dead_code)]
@@ -114,6 +160,7 @@ impl Layer {
         }
     }
 
+    #[allow(dead_code)]
     fn render(&self, renderer: &dyn TextureRenderer, position: Vec2) {
         if let Some(ref tex) = self.texture {
             renderer.render(tex, position);
@@ -125,7 +172,7 @@ impl Layer {
 // MAIN
 // ============================================================================
 
-#[macroquad::main("Avatar Render - Decorator Pattern")]
+#[macroquad::main("Avatar Render")]
 async fn main() {
     // Load avatar
     let avatar_path = Path::new("plugins/avatar-plugin/assets/bongo_cat/avatar.json");
@@ -169,10 +216,31 @@ async fn main() {
         .left_hand
         .as_ref()
         .map(|h| load_texture_from_image_data(&h.up_image));
+    let left_hand_frames: Vec<Texture2D> = mode
+        .left_hand
+        .as_ref()
+        .map(|h| {
+            h.frame_images
+                .iter()
+                .map(load_texture_from_image_data)
+                .collect()
+        })
+        .unwrap_or_default();
+
     let right_hand_tex = mode
         .right_hand
         .as_ref()
         .map(|h| load_texture_from_image_data(&h.up_image));
+    let right_hand_frames: Vec<Texture2D> = mode
+        .right_hand
+        .as_ref()
+        .map(|h| {
+            h.frame_images
+                .iter()
+                .map(load_texture_from_image_data)
+                .collect()
+        })
+        .unwrap_or_default();
     let face_tex = avatar
         .settings
         .as_ref()
@@ -182,6 +250,104 @@ async fn main() {
                 .get_face_by_key(face_name)
                 .map(load_texture_from_image_data)
         });
+
+    // Load key textures
+    let mut key_textures: std::collections::HashMap<String, Texture2D> =
+        std::collections::HashMap::new();
+    for (key_name, image_data) in &mode.key_images {
+        key_textures.insert(key_name.clone(), load_texture_from_image_data(image_data));
+    }
+
+    // Create key mapping (key name -> evdev key code)
+    // Common key codes from evdev (linux/input-event-codes.h)
+    // This mapping should ideally come from a config file or be auto-detected
+    let mut key_mapping: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
+    
+    // Control keys
+    key_mapping.insert("lctrl", 29);      // KEY_LEFTCTRL
+    key_mapping.insert("rctrl", 97);      // KEY_RIGHTCTRL
+    key_mapping.insert("lshift", 42);     // KEY_LEFTSHIFT
+    key_mapping.insert("rshift", 54);     // KEY_RIGHTSHIFT
+    key_mapping.insert("lalt", 56);       // KEY_LEFTALT
+    key_mapping.insert("ralt", 100);      // KEY_RIGHTALT
+    key_mapping.insert("space", 57);      // KEY_SPACE
+    key_mapping.insert("enter", 28);      // KEY_ENTER
+    key_mapping.insert("tab", 15);        // KEY_TAB
+    key_mapping.insert("backspace", 14);  // KEY_BACKSPACE
+    key_mapping.insert("escape", 1);      // KEY_ESC
+    
+    // Arrow keys
+    key_mapping.insert("up", 103);        // KEY_UP
+    key_mapping.insert("down", 108);      // KEY_DOWN
+    key_mapping.insert("left", 105);      // KEY_LEFT
+    key_mapping.insert("right", 106);     // KEY_RIGHT
+    
+    // Letter keys (a-z)
+    key_mapping.insert("a", 30);
+    key_mapping.insert("b", 48);
+    key_mapping.insert("c", 46);
+    key_mapping.insert("d", 32);
+    key_mapping.insert("e", 18);
+    key_mapping.insert("f", 33);
+    key_mapping.insert("g", 34);
+    key_mapping.insert("h", 35);
+    key_mapping.insert("i", 23);
+    key_mapping.insert("j", 36);
+    key_mapping.insert("k", 37);
+    key_mapping.insert("l", 38);
+    key_mapping.insert("m", 50);
+    key_mapping.insert("n", 49);
+    key_mapping.insert("o", 24);
+    key_mapping.insert("p", 25);
+    key_mapping.insert("q", 16);
+    key_mapping.insert("r", 19);
+    key_mapping.insert("s", 31);
+    key_mapping.insert("t", 20);
+    key_mapping.insert("u", 22);
+    key_mapping.insert("v", 47);
+    key_mapping.insert("w", 17);
+    key_mapping.insert("x", 45);
+    key_mapping.insert("y", 21);
+    key_mapping.insert("z", 44);
+    
+    // Number keys (0-9)
+    key_mapping.insert("0", 11);
+    key_mapping.insert("1", 2);
+    key_mapping.insert("2", 3);
+    key_mapping.insert("3", 4);
+    key_mapping.insert("4", 5);
+    key_mapping.insert("5", 6);
+    key_mapping.insert("6", 7);
+    key_mapping.insert("7", 8);
+    key_mapping.insert("8", 9);
+    key_mapping.insert("9", 10);
+
+    println!("Key mapping loaded with {} entries", key_mapping.len());
+
+    // Define which keys belong to which hand based on KeyUse from config
+    // Right hand: arrow keys (up, down, left, right)
+    // Left hand: everything else
+    let mut right_hand_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut left_hand_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+    
+    if let Some(key_bindings) = &mode.config.key_bindings {
+        for key_name in key_bindings {
+            // Arrow keys go to right hand
+            if key_name == "up" || key_name == "down" || key_name == "left" || key_name == "right" {
+                right_hand_keys.insert(key_name.clone());
+            } else {
+                // Everything else goes to left hand
+                left_hand_keys.insert(key_name.clone());
+            }
+        }
+    }
+
+    println!("Loaded {} key textures", key_textures.len());
+    for key_name in key_textures.keys() {
+        println!("  - {}", key_name);
+    }
+    println!("Left hand keys: {:?}", left_hand_keys);
+    println!("Right hand keys: {:?}", right_hand_keys);
 
     // === DEFORMATION CONFIGS ===
 
@@ -218,7 +384,7 @@ async fn main() {
     // Create layers
     let layers = vec![
         Layer::new("background", background_tex, background_config),
-        Layer::new("cat_body", cat_bg_tex, cat_config),
+        Layer::new("cat_body", cat_bg_tex, cat_config.clone()),
         Layer::new("face", face_tex, face_config),
         Layer::new("left_hand", left_hand_tex, left_hand_config),
         Layer::new("right_hand", right_hand_tex, right_hand_config),
@@ -240,9 +406,15 @@ async fn main() {
     // State
     let mut pressed_keys: HashSet<u32> = HashSet::new();
     let mut last_events: Vec<String> = Vec::new();
-    let mut enable_deformation = true;
+    let mut enable_deformation = false; // Deformation OFF by default
     let start_time = get_time();
 
+    // Hand animation state
+    let mut left_hand_state = HandState::Up;
+    #[allow(unused_assignments)]
+    let mut right_hand_state = HandState::Up;
+    let mut left_hand_frame_index = 0;
+    let mut right_hand_frame_index = 0;
     // Renderers
     let simple_renderer = SimpleRenderer;
 
@@ -262,20 +434,71 @@ async fn main() {
             );
         }
 
+        // Check if any pressed key belongs to left or right hand
+        let mut left_hand_pressed = false;
+        let mut right_hand_pressed = false;
+        let mut left_hand_key_code: Option<u32> = None;
+        let mut right_hand_key_code: Option<u32> = None;
+        
+        if let Some(key_bindings) = &mode.config.key_bindings {
+            for key_name in key_bindings {
+                if let Some(&key_code) = key_mapping.get(key_name.as_str()) {
+                    if pressed_keys.contains(&key_code) {
+                        // Check if this key belongs to left hand
+                        if left_hand_keys.contains(key_name.as_str()) {
+                            left_hand_pressed = true;
+                            left_hand_key_code = Some(key_code);
+                        }
+                        // Check if this key belongs to right hand
+                        if right_hand_keys.contains(key_name.as_str()) {
+                            right_hand_pressed = true;
+                            right_hand_key_code = Some(key_code);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update frame indices based on pressed keys for each hand
+        if left_hand_pressed {
+            if let Some(code) = left_hand_key_code {
+                left_hand_frame_index = code as usize;
+            }
+        }
+        
+        if right_hand_pressed {
+            if let Some(code) = right_hand_key_code {
+                right_hand_frame_index = code as usize;
+            }
+        }
+
+        // Update hand states independently
+        left_hand_state = if left_hand_pressed {
+            HandState::Down
+        } else {
+            HandState::Up
+        };
+
+        right_hand_state = if right_hand_pressed {
+            HandState::Down
+        } else {
+            HandState::Up
+        };
+
         // Poll input capture
         if let Some(ref mut capture) = input_capture {
             for event in capture.poll() {
                 match event {
                     InputEvent::KeyPress(code) => {
                         pressed_keys.insert(code);
-                        last_events.push(format!("↓ Key {:#06x}", code));
+                        last_events.push(format!("Press {:#}", code));
                         if last_events.len() > 10 {
                             last_events.remove(0);
                         }
                     }
                     InputEvent::KeyRelease(code) => {
                         pressed_keys.remove(&code);
-                        last_events.push(format!("↑ Key {:#06x}", code));
+                        last_events.push(format!("Release {:#}", code));
                         if last_events.len() > 10 {
                             last_events.remove(0);
                         }
@@ -296,15 +519,90 @@ async fn main() {
 
         clear_background(LIGHTGRAY);
 
-        // Render all layers using appropriate renderer
-        for layer in &layers {
-            let renderer: &dyn TextureRenderer = if enable_deformation {
-                &DeformationRenderer::new(layer.config.clone(), mouse_influence, current_time)
-            } else {
-                &simple_renderer
-            };
+        // Render layers with appropriate renderers
+        // Background
+        if let Some(ref tex) = layers[0].texture {
+            simple_renderer.render(tex, Vec2::ZERO);
+        }
 
-            layer.render(renderer, Vec2::ZERO);
+        // Cat body
+        if let Some(ref tex) = layers[1].texture {
+            if enable_deformation {
+                let renderer = DeformationRenderer::new(
+                    layers[1].config.clone(),
+                    mouse_influence,
+                    current_time,
+                );
+                renderer.render(tex, Vec2::ZERO);
+            } else {
+                simple_renderer.render(tex, Vec2::ZERO);
+            }
+        }
+
+        // Face
+        if let Some(ref tex) = layers[2].texture {
+            if enable_deformation {
+                let renderer = DeformationRenderer::new(
+                    layers[2].config.clone(),
+                    mouse_influence,
+                    current_time,
+                );
+                renderer.render(tex, Vec2::ZERO);
+            } else {
+                simple_renderer.render(tex, Vec2::ZERO);
+            }
+        }
+
+        // Draw pressed keys images (before hands so hands are on top)
+        if let (Some(key_bindings), Some(key_images)) =
+            (&mode.config.key_bindings, &mode.config.keys_images)
+        {
+            for (i, key_name) in key_bindings.iter().enumerate() {
+                // Get the corresponding image name
+                if let Some(_) = key_images.get(i) {
+                    // Get the key code for this key name
+                    if let Some(&key_code) = key_mapping.get(key_name.as_str()) {
+                        // Check if key is pressed
+                        if pressed_keys.contains(&key_code) {
+                            // Draw the texture
+                            // Note: key_textures is keyed by key_name (e.g. "lctrl"), not image_name
+                            if let Some(tex) = key_textures.get(key_name.as_str()) {
+                                // Apply deformation if enabled (keys usually move with the table/cat)
+                                if enable_deformation {
+                                    let renderer = DeformationRenderer::new(
+                                        cat_config.clone(), // Use cat config for keys so they move with body
+                                        mouse_influence,
+                                        current_time,
+                                    );
+                                    renderer.render(tex, Vec2::ZERO);
+                                } else {
+                                    simple_renderer.render(tex, Vec2::ZERO);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Left hand - with key press animation (drawn after keys to be on top)
+        if let Some(ref tex) = layers[3].texture {
+            let renderer = KeyPressAnimationRenderer::new(
+                left_hand_state,
+                Some(&left_hand_frames),
+                left_hand_frame_index,
+            );
+            renderer.render(tex, Vec2::ZERO);
+        }
+
+        // Right hand - with key press animation (drawn after keys to be on top)
+        if let Some(ref tex) = layers[4].texture {
+            let renderer = KeyPressAnimationRenderer::new(
+                right_hand_state,
+                Some(&right_hand_frames),
+                right_hand_frame_index,
+            );
+            renderer.render(tex, Vec2::ZERO);
         }
 
         // UI overlay
@@ -317,11 +615,7 @@ async fn main() {
             DARKGRAY,
         );
 
-        let deform_color = if enable_deformation {
-            DARKGREEN
-        } else {
-            RED
-        };
+        let deform_color = if enable_deformation { DARKGREEN } else { RED };
         draw_text(
             &format!(
                 "Deformation: {}",
@@ -335,7 +629,10 @@ async fn main() {
 
         if enable_deformation {
             draw_text(
-                &format!("Mouse: ({:.2}, {:.2})", mouse_influence.x, mouse_influence.y),
+                &format!(
+                    "Mouse: ({:.2}, {:.2})",
+                    mouse_influence.x, mouse_influence.y
+                ),
                 20.0,
                 110.0,
                 18.0,
@@ -343,8 +640,25 @@ async fn main() {
             );
         }
 
+        // Hand animation state
+        let hand_state_text = match left_hand_state {
+            HandState::Up => "Hands: UP",
+            HandState::Down => "Hands: DOWN",
+        };
+        draw_text(
+            hand_state_text,
+            20.0,
+            if enable_deformation { 140.0 } else { 110.0 },
+            18.0,
+            if matches!(left_hand_state, HandState::Down) {
+                DARKGREEN
+            } else {
+                DARKGRAY
+            },
+        );
+
         // Input capture status
-        let status_y = 140.0;
+        let status_y = if enable_deformation { 170.0 } else { 140.0 };
         if input_capture.is_some() {
             draw_text(
                 &format!("Input Capture: Active ({} keys)", pressed_keys.len()),
