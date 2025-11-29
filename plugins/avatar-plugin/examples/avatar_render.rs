@@ -107,16 +107,20 @@ enum HandState {
 /// Key press animation renderer - swaps hand textures based on key presses
 struct KeyPressAnimationRenderer<'a> {
     hand_state: HandState,
-    frames: Option<&'a Vec<Texture2D>>,
-    frame_index: usize,
+    key_frames: Option<&'a std::collections::HashMap<u32, Texture2D>>,
+    pressed_key_code: Option<u32>,
 }
 
 impl<'a> KeyPressAnimationRenderer<'a> {
-    fn new(hand_state: HandState, frames: Option<&'a Vec<Texture2D>>, frame_index: usize) -> Self {
+    fn new(
+        hand_state: HandState,
+        key_frames: Option<&'a std::collections::HashMap<u32, Texture2D>>,
+        pressed_key_code: Option<u32>,
+    ) -> Self {
         Self {
             hand_state,
-            frames,
-            frame_index,
+            key_frames,
+            pressed_key_code,
         }
     }
 }
@@ -126,10 +130,10 @@ impl<'a> TextureRenderer for KeyPressAnimationRenderer<'a> {
         let tex_to_draw = match self.hand_state {
             HandState::Up => texture,
             HandState::Down => {
-                // If we have frames, use the selected frame, otherwise use default texture
-                if let Some(frames) = self.frames {
-                    if !frames.is_empty() {
-                        &frames[self.frame_index % frames.len()]
+                // If we have key frames and a pressed key code, use that frame
+                if let (Some(frames), Some(key_code)) = (self.key_frames, self.pressed_key_code) {
+                    if let Some(frame_tex) = frames.get(&key_code) {
+                        frame_tex
                     } else {
                         texture
                     }
@@ -198,7 +202,7 @@ async fn main() {
                 .available_modes
                 .first()
                 .map(|s| s.as_str())
-                .unwrap_or("keyboard")
+                .unwrap_or("standard")
         });
 
     let mode = avatar
@@ -216,31 +220,25 @@ async fn main() {
         .left_hand
         .as_ref()
         .map(|h| load_texture_from_image_data(&h.up_image));
-    let left_hand_frames: Vec<Texture2D> = mode
-        .left_hand
-        .as_ref()
-        .map(|h| {
-            h.frame_images
-                .iter()
-                .map(load_texture_from_image_data)
-                .collect()
-        })
-        .unwrap_or_default();
+    
+    // Load left hand key frames from the new structure (keycode -> texture)
+    let mut left_hand_key_frames: std::collections::HashMap<u32, Texture2D> = 
+        std::collections::HashMap::new();
+    for (&keycode, image_data) in &mode.left_hand_key_frames {
+        left_hand_key_frames.insert(keycode, load_texture_from_image_data(image_data));
+    }
 
     let right_hand_tex = mode
         .right_hand
         .as_ref()
         .map(|h| load_texture_from_image_data(&h.up_image));
-    let right_hand_frames: Vec<Texture2D> = mode
-        .right_hand
-        .as_ref()
-        .map(|h| {
-            h.frame_images
-                .iter()
-                .map(load_texture_from_image_data)
-                .collect()
-        })
-        .unwrap_or_default();
+    
+    // Load right hand key frames from the new structure (keycode -> texture)
+    let mut right_hand_key_frames: std::collections::HashMap<u32, Texture2D> = 
+        std::collections::HashMap::new();
+    for (&keycode, image_data) in &mode.right_hand_key_frames {
+        right_hand_key_frames.insert(keycode, load_texture_from_image_data(image_data));
+    }
     let face_tex = avatar
         .settings
         .as_ref()
@@ -259,96 +257,6 @@ async fn main() {
     }
 
     // Create key mapping (key name -> evdev key code)
-    // Common key codes from evdev (linux/input-event-codes.h)
-    // This mapping should ideally come from a config file or be auto-detected
-    let mut key_mapping: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
-    
-    // Control keys
-    key_mapping.insert("lctrl", 29);      // KEY_LEFTCTRL
-    key_mapping.insert("rctrl", 97);      // KEY_RIGHTCTRL
-    key_mapping.insert("lshift", 42);     // KEY_LEFTSHIFT
-    key_mapping.insert("rshift", 54);     // KEY_RIGHTSHIFT
-    key_mapping.insert("lalt", 56);       // KEY_LEFTALT
-    key_mapping.insert("ralt", 100);      // KEY_RIGHTALT
-    key_mapping.insert("space", 57);      // KEY_SPACE
-    key_mapping.insert("enter", 28);      // KEY_ENTER
-    key_mapping.insert("tab", 15);        // KEY_TAB
-    key_mapping.insert("backspace", 14);  // KEY_BACKSPACE
-    key_mapping.insert("escape", 1);      // KEY_ESC
-    
-    // Arrow keys
-    key_mapping.insert("up", 103);        // KEY_UP
-    key_mapping.insert("down", 108);      // KEY_DOWN
-    key_mapping.insert("left", 105);      // KEY_LEFT
-    key_mapping.insert("right", 106);     // KEY_RIGHT
-    
-    // Letter keys (a-z)
-    key_mapping.insert("a", 30);
-    key_mapping.insert("b", 48);
-    key_mapping.insert("c", 46);
-    key_mapping.insert("d", 32);
-    key_mapping.insert("e", 18);
-    key_mapping.insert("f", 33);
-    key_mapping.insert("g", 34);
-    key_mapping.insert("h", 35);
-    key_mapping.insert("i", 23);
-    key_mapping.insert("j", 36);
-    key_mapping.insert("k", 37);
-    key_mapping.insert("l", 38);
-    key_mapping.insert("m", 50);
-    key_mapping.insert("n", 49);
-    key_mapping.insert("o", 24);
-    key_mapping.insert("p", 25);
-    key_mapping.insert("q", 16);
-    key_mapping.insert("r", 19);
-    key_mapping.insert("s", 31);
-    key_mapping.insert("t", 20);
-    key_mapping.insert("u", 22);
-    key_mapping.insert("v", 47);
-    key_mapping.insert("w", 17);
-    key_mapping.insert("x", 45);
-    key_mapping.insert("y", 21);
-    key_mapping.insert("z", 44);
-    
-    // Number keys (0-9)
-    key_mapping.insert("0", 11);
-    key_mapping.insert("1", 2);
-    key_mapping.insert("2", 3);
-    key_mapping.insert("3", 4);
-    key_mapping.insert("4", 5);
-    key_mapping.insert("5", 6);
-    key_mapping.insert("6", 7);
-    key_mapping.insert("7", 8);
-    key_mapping.insert("8", 9);
-    key_mapping.insert("9", 10);
-
-    println!("Key mapping loaded with {} entries", key_mapping.len());
-
-    // Define which keys belong to which hand based on KeyUse from config
-    // Right hand: arrow keys (up, down, left, right)
-    // Left hand: everything else
-    let mut right_hand_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut left_hand_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
-    
-    if let Some(key_bindings) = &mode.config.key_bindings {
-        for key_name in key_bindings {
-            // Arrow keys go to right hand
-            if key_name == "up" || key_name == "down" || key_name == "left" || key_name == "right" {
-                right_hand_keys.insert(key_name.clone());
-            } else {
-                // Everything else goes to left hand
-                left_hand_keys.insert(key_name.clone());
-            }
-        }
-    }
-
-    println!("Loaded {} key textures", key_textures.len());
-    for key_name in key_textures.keys() {
-        println!("  - {}", key_name);
-    }
-    println!("Left hand keys: {:?}", left_hand_keys);
-    println!("Right hand keys: {:?}", right_hand_keys);
-
     // === DEFORMATION CONFIGS ===
 
     let background_config = DeformConfig::default(); // No deformation for background
@@ -413,8 +321,6 @@ async fn main() {
     let mut left_hand_state = HandState::Up;
     #[allow(unused_assignments)]
     let mut right_hand_state = HandState::Up;
-    let mut left_hand_frame_index = 0;
-    let mut right_hand_frame_index = 0;
     // Renderers
     let simple_renderer = SimpleRenderer;
 
@@ -435,40 +341,24 @@ async fn main() {
         }
 
         // Check if any pressed key belongs to left or right hand
+        // Check if any pressed key belongs to left or right hand
         let mut left_hand_pressed = false;
         let mut right_hand_pressed = false;
-        let mut left_hand_key_code: Option<u32> = None;
-        let mut right_hand_key_code: Option<u32> = None;
+        let mut left_hand_pressed_key: Option<u32> = None;
+        let mut right_hand_pressed_key: Option<u32> = None;
         
-        if let Some(key_bindings) = &mode.config.key_bindings {
-            for key_name in key_bindings {
-                if let Some(&key_code) = key_mapping.get(key_name.as_str()) {
-                    if pressed_keys.contains(&key_code) {
-                        // Check if this key belongs to left hand
-                        if left_hand_keys.contains(key_name.as_str()) {
-                            left_hand_pressed = true;
-                            left_hand_key_code = Some(key_code);
-                        }
-                        // Check if this key belongs to right hand
-                        if right_hand_keys.contains(key_name.as_str()) {
-                            right_hand_pressed = true;
-                            right_hand_key_code = Some(key_code);
-                        }
-                    }
-                }
+        // Check if any pressed key has a corresponding hand frame
+        for &key_code in &pressed_keys {
+            // Check left hand
+            if left_hand_key_frames.contains_key(&key_code) {
+                left_hand_pressed = true;
+                left_hand_pressed_key = Some(key_code);
             }
-        }
-
-        // Update frame indices based on pressed keys for each hand
-        if left_hand_pressed {
-            if let Some(code) = left_hand_key_code {
-                left_hand_frame_index = code as usize;
-            }
-        }
-        
-        if right_hand_pressed {
-            if let Some(code) = right_hand_key_code {
-                right_hand_frame_index = code as usize;
+            
+            // Check right hand
+            if right_hand_key_frames.contains_key(&key_code) {
+                right_hand_pressed = true;
+                right_hand_pressed_key = Some(key_code);
             }
         }
 
@@ -554,32 +444,19 @@ async fn main() {
         }
 
         // Draw pressed keys images (before hands so hands are on top)
-        if let (Some(key_bindings), Some(key_images)) =
-            (&mode.config.key_bindings, &mode.config.keys_images)
-        {
-            for (i, key_name) in key_bindings.iter().enumerate() {
-                // Get the corresponding image name
-                if let Some(_) = key_images.get(i) {
-                    // Get the key code for this key name
-                    if let Some(&key_code) = key_mapping.get(key_name.as_str()) {
-                        // Check if key is pressed
-                        if pressed_keys.contains(&key_code) {
-                            // Draw the texture
-                            // Note: key_textures is keyed by key_name (e.g. "lctrl"), not image_name
-                            if let Some(tex) = key_textures.get(key_name.as_str()) {
-                                // Apply deformation if enabled (keys usually move with the table/cat)
-                                if enable_deformation {
-                                    let renderer = DeformationRenderer::new(
-                                        cat_config.clone(), // Use cat config for keys so they move with body
-                                        mouse_influence,
-                                        current_time,
-                                    );
-                                    renderer.render(tex, Vec2::ZERO);
-                                } else {
-                                    simple_renderer.render(tex, Vec2::ZERO);
-                                }
-                            }
-                        }
+        for (key_str, tex) in &key_textures {
+            // Try to parse key string as keycode
+            if let Ok(key_code) = key_str.parse::<u32>() {
+                if pressed_keys.contains(&key_code) {
+                    if enable_deformation {
+                        let renderer = DeformationRenderer::new(
+                            layers[1].config.clone(), // Use cat config for keys (they move with table)
+                            mouse_influence,
+                            current_time,
+                        );
+                        renderer.render(tex, Vec2::ZERO);
+                    } else {
+                        simple_renderer.render(tex, Vec2::ZERO);
                     }
                 }
             }
@@ -589,8 +466,8 @@ async fn main() {
         if let Some(ref tex) = layers[3].texture {
             let renderer = KeyPressAnimationRenderer::new(
                 left_hand_state,
-                Some(&left_hand_frames),
-                left_hand_frame_index,
+                Some(&left_hand_key_frames),
+                left_hand_pressed_key,
             );
             renderer.render(tex, Vec2::ZERO);
         }
@@ -599,8 +476,8 @@ async fn main() {
         if let Some(ref tex) = layers[4].texture {
             let renderer = KeyPressAnimationRenderer::new(
                 right_hand_state,
-                Some(&right_hand_frames),
-                right_hand_frame_index,
+                Some(&right_hand_key_frames),
+                right_hand_pressed_key,
             );
             renderer.render(tex, Vec2::ZERO);
         }

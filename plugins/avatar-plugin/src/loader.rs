@@ -62,6 +62,9 @@ impl ModeListConfig {
 /// Individual mode configuration (e.g., keyboard, standard, etc.)
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ModeConfig {
+    #[serde(rename = "version")]
+    pub version: Option<String>,
+
     #[serde(rename = "BackgroundImageName")]
     pub background_image: String,
 
@@ -74,7 +77,18 @@ pub struct ModeConfig {
     #[serde(rename = "CatModelPath")]
     pub cat_model_path: Option<String>,
 
-    // Keys configuration
+    // New KeyMapping structure: key_name -> [key_image_path, hand_image_path]
+    #[serde(rename = "KeyMapping")]
+    pub key_mapping: Option<HashMap<String, Vec<String>>>,
+
+    // Hand up images (direct paths from mode root)
+    #[serde(rename = "LeftHandUpImageName")]
+    pub left_hand_up_image: Option<String>,
+
+    #[serde(rename = "RightHandUpImageName")]
+    pub right_hand_up_image: Option<String>,
+
+    // Legacy fields for backward compatibility
     #[serde(rename = "KeysImagePath")]
     pub keys_image_path: Option<String>,
 
@@ -84,37 +98,30 @@ pub struct ModeConfig {
     #[serde(rename = "KeyUse")]
     pub key_bindings: Option<Vec<String>>,
 
-    // Left hand configuration
+    #[serde(rename = "LeftHandImagePath")]
+    pub left_hand_image_path: Option<String>,
+
+    #[serde(rename = "LeftHandImageName")]
+    pub left_hand_images: Option<Vec<String>>,
+
+    #[serde(rename = "RightHandImagePath")]
+    pub right_hand_image_path: Option<String>,
+
+    #[serde(rename = "RightHandImageName")]
+    pub right_hand_images: Option<Vec<String>>,
+
+    // Model configuration
     #[serde(rename = "ModelHasLeftHandModel")]
     pub has_left_hand_model: bool,
 
     #[serde(rename = "ModelLeftHandModelPath")]
     pub left_hand_model_path: Option<String>,
 
-    #[serde(rename = "LeftHandImagePath")]
-    pub left_hand_image_path: Option<String>,
-
-    #[serde(rename = "LeftHandUpImageName")]
-    pub left_hand_up_image: Option<String>,
-
-    #[serde(rename = "LeftHandImageName")]
-    pub left_hand_images: Option<Vec<String>>,
-
-    // Right hand configuration
     #[serde(rename = "ModelHasRightHandModel")]
     pub has_right_hand_model: bool,
 
     #[serde(rename = "ModelRightHandModelPath")]
     pub right_hand_model_path: Option<String>,
-
-    #[serde(rename = "RightHandImagePath")]
-    pub right_hand_image_path: Option<String>,
-
-    #[serde(rename = "RightHandUpImageName")]
-    pub right_hand_up_image: Option<String>,
-
-    #[serde(rename = "RightHandImageName")]
-    pub right_hand_images: Option<Vec<String>>,
 }
 
 impl ModeConfig {
@@ -175,8 +182,12 @@ pub struct LoadedMode {
     pub left_hand: Option<HandData>,
     pub right_hand: Option<HandData>,
 
-    // Keys
+    // Keys: key_name -> key_image
     pub key_images: HashMap<String, ImageData>,
+    
+    // Hand frames for each key: keycode -> hand_frame_image
+    pub left_hand_key_frames: HashMap<u32, ImageData>,
+    pub right_hand_key_frames: HashMap<u32, ImageData>,
 
     // Face expressions
     pub face_images: Vec<ImageData>,
@@ -195,6 +206,8 @@ impl LoadedMode {
             left_hand: None,
             right_hand: None,
             key_images: HashMap::new(),
+            left_hand_key_frames: HashMap::new(),
+            right_hand_key_frames: HashMap::new(),
             face_images: Vec::new(),
         };
 
@@ -202,10 +215,81 @@ impl LoadedMode {
         loaded.background = Self::load_optional_image(mode_path, &config.background_image);
         loaded.cat_background = Self::load_optional_image(mode_path, &config.cat_background_image);
 
-        // Load left hand
+        // Load hands using new direct path format
+        if let Some(ref left_up_path) = config.left_hand_up_image {
+            if !left_up_path.is_empty() {
+                if let Ok(up_image) = ImageData::load(&mode_path.join(left_up_path)) {
+                    loaded.left_hand = Some(HandData {
+                        up_image,
+                        frame_images: Vec::new(), // Will be filled from KeyMapping
+                    });
+                }
+            }
+        }
+
+        if let Some(ref right_up_path) = config.right_hand_up_image {
+            if !right_up_path.is_empty() {
+                if let Ok(up_image) = ImageData::load(&mode_path.join(right_up_path)) {
+                    loaded.right_hand = Some(HandData {
+                        up_image,
+                        frame_images: Vec::new(), // Will be filled from KeyMapping
+                    });
+                }
+            }
+        }
+
+        // Load from new KeyMapping structure
+        if let Some(ref key_mapping) = config.key_mapping {
+            // Create key name -> keycode mapping
+            let key_to_code = Self::get_key_code_mapping();
+            
+            for (key_name, paths) in key_mapping {
+                // paths[0] = key image path, paths[1] = hand image path
+                if paths.len() >= 2 {
+                    // Load key image
+                    let key_img_path = mode_path.join(&paths[0]);
+                    if let Ok(key_img) = ImageData::load(&key_img_path) {
+                        loaded.key_images.insert(key_name.clone(), key_img);
+                    }
+
+                    // Load hand frame image and determine which hand
+                    // Load hand frame image and determine which hand
+                    let hand_img_path = mode_path.join(&paths[1]);
+                    if let Ok(hand_img) = ImageData::load(&hand_img_path) {
+                        // Try to parse key as number first, then look up in map
+                        let keycode_opt = key_name.parse::<u32>().ok()
+                            .or_else(|| key_to_code.get(key_name.as_str()).cloned());
+
+                        if let Some(keycode) = keycode_opt {
+                            // Determine which hand based on path or key code
+                            // If path contains "lefthand", it's left hand.
+                            // If path contains "righthand", it's right hand.
+                            // Fallback: arrow keys (103, 108, 105, 106) are right hand, others left.
+                            let is_right_hand = paths[1].contains("righthand") || 
+                                                [103, 108, 105, 106].contains(&keycode);
+
+                            if is_right_hand {
+                                loaded.right_hand_key_frames.insert(keycode, hand_img);
+                            } else {
+                                loaded.left_hand_key_frames.insert(keycode, hand_img);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Fallback to legacy format for backward compatibility
+            Self::load_legacy_keys(&mut loaded, mode_path, &config)?;
+        }
+
+        Ok(loaded)
+    }
+
+    // Legacy key loading for backward compatibility
+    fn load_legacy_keys(loaded: &mut LoadedMode, mode_path: &Path, config: &ModeConfig) -> Result<()> {
+        // Load left hand (legacy)
         if let Some(path) = &config.left_hand_image_path {
             if !path.is_empty() {
-                // ✅ Проверяем что путь не пустой
                 loaded.left_hand = Self::load_hand_data(
                     mode_path,
                     path,
@@ -216,10 +300,9 @@ impl LoadedMode {
             }
         }
 
-        // Load right hand
+        // Load right hand (legacy)
         if let Some(path) = &config.right_hand_image_path {
             if !path.is_empty() {
-                // ✅ Проверяем что путь не пустой
                 loaded.right_hand = Self::load_hand_data(
                     mode_path,
                     path,
@@ -230,19 +313,17 @@ impl LoadedMode {
             }
         }
 
-        // Load key images
+        // Load key images (legacy)
         if let (Some(key_path), Some(key_images), Some(key_bindings)) = (
             &config.keys_image_path,
             &config.keys_images,
             &config.key_bindings,
         ) {
             if !key_path.is_empty() {
-                // ✅ Проверяем что путь не пустой
                 let keys_dir = mode_path.join(key_path);
                 for (i, key_name) in key_bindings.iter().enumerate() {
                     if let Some(image_name) = key_images.get(i) {
                         if !image_name.is_empty() {
-                            // ✅ Проверяем имя изображения
                             let img_path = keys_dir.join(image_name);
                             if let Ok(img) = ImageData::load(&img_path) {
                                 loaded.key_images.insert(key_name.clone(), img);
@@ -252,8 +333,48 @@ impl LoadedMode {
                 }
             }
         }
+        
+        Ok(())
+    }
 
-        Ok(loaded)
+    // Get evdev keycode mapping for key names
+    fn get_key_code_mapping() -> HashMap<&'static str, u32> {
+        let mut map = HashMap::new();
+        
+        // Control keys
+        map.insert("lctrl", 29);
+        map.insert("rctrl", 97);
+        map.insert("lshift", 42);
+        map.insert("rshift", 54);
+        map.insert("lalt", 56);
+        map.insert("ralt", 100);
+        map.insert("space", 57);
+        map.insert("enter", 28);
+        map.insert("tab", 15);
+        map.insert("backspace", 14);
+        map.insert("escape", 1);
+        
+        // Arrow keys
+        map.insert("up", 103);
+        map.insert("down", 108);
+        map.insert("left", 105);
+        map.insert("right", 106);
+        
+        // Letters
+        map.insert("a", 30); map.insert("b", 48); map.insert("c", 46); map.insert("d", 32);
+        map.insert("e", 18); map.insert("f", 33); map.insert("g", 34); map.insert("h", 35);
+        map.insert("i", 23); map.insert("j", 36); map.insert("k", 37); map.insert("l", 38);
+        map.insert("m", 50); map.insert("n", 49); map.insert("o", 24); map.insert("p", 25);
+        map.insert("q", 16); map.insert("r", 19); map.insert("s", 31); map.insert("t", 20);
+        map.insert("u", 22); map.insert("v", 47); map.insert("w", 17); map.insert("x", 45);
+        map.insert("y", 21); map.insert("z", 44);
+        
+        // Numbers
+        map.insert("0", 11); map.insert("1", 2); map.insert("2", 3); map.insert("3", 4);
+        map.insert("4", 5); map.insert("5", 6); map.insert("6", 7); map.insert("7", 8);
+        map.insert("8", 9); map.insert("9", 10);
+        
+        map
     }
 
     fn load_optional_image(base_path: &Path, name: &str) -> Option<ImageData> {
