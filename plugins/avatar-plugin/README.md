@@ -60,6 +60,8 @@ Live2D Cubims SDK - проприетарная либа, и референс-п�
 > [!note] сейчас я пишу для голого png.
 > треубется добавить физику и деформацию
 
+Для динамической руки нужна *rigid deformation*, нативно это можно сделать через `atan2` для вычисления угла поворота, scaling точка крепления на аватар.
+
 ### Windows
 
 - Windows Hooks API
@@ -99,12 +101,13 @@ libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
 - [Input capture; MacOS, Windows, x11 / rdev](https://github.com/Narsil/rdev)
 - [Input capture; MacOS, Windows, x11 / device_query](https://github.com/ostrosco/device_query)
 - [Bongo.cat](https://github.com/Externalizable/bongo.cat/blob/master)
-- [Bongobs Cat Plugin](https://github.com/a1928370421/Bongobs-Cat-Plugin)
+- [Bongobs-Cat-Plugin](https://github.com/a1928370421/Bongobs-Cat-Plugin)
 - [evdev documentation](https://docs.rs/evdev/)
 - [bevy_spritesheet_animation](https://docs.rs/bevy_spritesheet_animation/)
 - [skeletal_animation](https://github.com/PistonDevelopers/skeletal_animation)
+- [BongoCat / Desktop App - Tauri and Live2D.js](https://github.com/ayangweb/BongoCat/tree/master)
 
-## Bongo.cat
+## Bongobs-Cat-Plugin
 
 Использует Live2D Cubism SDK - проприетарная либа, (`cubism-rs`, `spine-rs`, `inochi2d`). OpenGL. Mesh Deformation через контрольные точки.
 Нужена Mesh деформация.

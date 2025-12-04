@@ -91,8 +91,8 @@ struct AvatarSource {
     left_hand_frame: usize,
     right_hand_frame: usize,
 
-    /// Нажатые клавиши (для анимации) - хранятся как keycodes (u32)
-    pressed_keys: std::collections::HashSet<u32>,
+    /// Нажатые клавиши (для анимации)
+    pressed_keys: std::collections::HashSet<String>,
 
     /// Текущий уровень аудио (0.0 - 1.0)
     audio_level: f32,
@@ -374,7 +374,7 @@ impl VideoTickSource for AvatarSource {
                 match event {
                     input_capture::InputEvent::KeyPress(key) => {
                         println!("🎹 Key PRESSED: {} (0x{:04X})", key, key);
-                        self.pressed_keys.insert(key);
+                        self.pressed_keys.insert(key.to_string());
 
                         // Показываем распространенные клавиши
                         match key {
@@ -388,7 +388,7 @@ impl VideoTickSource for AvatarSource {
                     }
                     input_capture::InputEvent::KeyRelease(key) => {
                         println!("🎹 Key RELEASED: {} (0x{:04X})", key, key);
-                        self.pressed_keys.remove(&key);
+                        self.pressed_keys.remove(&key.to_string());
                     }
                     // if !running.load(Ordering::Relaxed) {
                     //     break;
@@ -495,7 +495,7 @@ impl VideoRenderSource for AvatarSource {
             // Пытаемся распарсить строку ключа как keycode
             if let Ok(key_code) = key_str.parse::<u32>() {
                 // Проверяем, нажата ли эта клавиша
-                if pressed_keys.contains(&key_code) {
+                if pressed_keys.contains(&key_code.to_string()) {
                     draw_sprite(texture_cache, key_image, 0.0, 0.0);
                 }
             }
@@ -506,15 +506,17 @@ impl VideoRenderSource for AvatarSource {
         let mut right_hand_pressed_key: Option<u32> = None;
 
         // Проверяем все нажатые клавиши
-        for &key_code in pressed_keys.iter() {
-            // Проверяем левую руку
-            if mode.left_hand_key_frames.contains_key(&key_code) {
-                left_hand_pressed_key = Some(key_code);
-            }
-            
-            // Проверяем правую руку
-            if mode.right_hand_key_frames.contains_key(&key_code) {
-                right_hand_pressed_key = Some(key_code);
+        for key_str in pressed_keys.iter() {
+            if let Ok(key_code) = key_str.parse::<u32>() {
+                // Проверяем левую руку
+                if mode.left_hand_key_frames.contains_key(&key_code) {
+                    left_hand_pressed_key = Some(key_code);
+                }
+                
+                // Проверяем правую руку
+                if mode.right_hand_key_frames.contains_key(&key_code) {
+                    right_hand_pressed_key = Some(key_code);
+                }
             }
         }
 
@@ -556,9 +558,6 @@ impl VideoRenderSource for AvatarSource {
         let frame = FRAME_COUNT.fetch_add(1, Ordering::Relaxed);
         if frame % 300 == 0 {
             println!("✓ Rendered frame {}", frame);
-            println!("  Pressed keys: {:?}", pressed_keys);
-            println!("  Left hand key: {:?}", left_hand_pressed_key);
-            println!("  Right hand key: {:?}", right_hand_pressed_key);
         }
     }
 }
@@ -579,6 +578,9 @@ impl KeyClickSource for AvatarSource {
         };
 
         if pressed {
+            // Добавляем в набор нажатых клавиш
+            self.pressed_keys.insert(key_str.clone());
+
             // Логика переключения лиц по клавишам 1-4
             let face_id = match key_str.as_str() {
                 "1" => Some("f1"),
@@ -604,6 +606,17 @@ impl KeyClickSource for AvatarSource {
             if let Some(_face_img) = avatar.get_face_by_key(&key_str) {
                 self.current_face = Some(key_str.clone());
             }
+
+            // Проверяем, есть ли это клавиша в текущем режиме
+            if let Some(mode) = avatar.get_mode(&self.current_mode) {
+                if let Some(_key_img) = mode.key_images.get(&key_str) {
+                    // TODO: Показать анимацию нажатия клавиши
+                    // TODO: Анимировать руки
+                }
+            }
+        } else {
+            // Убираем из набора нажатых клавиш
+            self.pressed_keys.remove(&key_str);
         }
     }
 }

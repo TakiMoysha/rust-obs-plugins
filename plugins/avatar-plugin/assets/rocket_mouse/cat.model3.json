@@ -1,0 +1,34 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "cat.moc3",
+		"Textures": [
+			"cat.1024/texture_00.png"
+		],
+		"DisplayInfo": "cat.cdi3.json",
+		"Motions": {
+			"CAT_motion_lock": [
+				{
+					"File": "live2d_motion1.motion3.json",
+					"Sound": "live2d_motion1.flac"
+				}
+			]
+		}
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		},
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeLOpen",
+				"ParamEyeROpen"
+			]
+		}
+	],
+	"HitAreas": []
+}
