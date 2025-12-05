@@ -107,6 +107,7 @@ libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
 - [skeletal_animation](https://github.com/PistonDevelopers/skeletal_animation)
 - [BongoCat / Desktop App - Tauri and Live2D.js](https://github.com/ayangweb/BongoCat/tree/master)
 - [Awesome Bongo Cats](https://github.com/g0l4/BongoCat-Models)
+- [wayland bongocat widget](https://github.com/saatvik333/wayland-bongocat)
 
 ## Bongobs-Cat-Plugin
 
